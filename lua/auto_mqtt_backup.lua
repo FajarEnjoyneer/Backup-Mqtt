@@ -28,17 +28,30 @@ local function ensure_dir(path)
 end
 
 local function check_network_reachability(host, timeout)
-  timeout = timeout or 2
-
+  local client_test = mosq.new("mqtt_check_" .. tostring(os.time()))
+  local is_connected = false
   
-  local cmd = string.format("ping -c 1 -W %d %s > /dev/null 2>&1", timeout, host)
-  local exit_code = os.execute(cmd)
-  
-  if exit_code == 0 then
-    return true
-  else
-    return false
+  -- Callback check
+  client_test.ON_CONNECT = function(success)
+    if success then is_connected = true end
   end
+
+  pcall(function()
+      local res = client_test:connect(host, 1883, 10)
+      if res == mosq.MOSQ_ERR_SUCCESS or res == true then
+          client_test:loop_start()
+          -- Wait up to 2 seconds for CONNACK
+          local start = os.time()
+          while os.difftime(os.time(), start) < 3 do
+              if is_connected then break end
+              socket.sleep(0.1)
+          end
+          client_test:disconnect()
+          pcall(client_test.loop_stop, client_test, true)
+      end
+  end)
+  
+  return is_connected
 end
 
 local function save_to_daily_file(topic, payload)
