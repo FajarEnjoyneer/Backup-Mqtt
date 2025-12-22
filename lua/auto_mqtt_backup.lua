@@ -47,7 +47,10 @@ local function save_to_daily_file(topic, payload)
   local file_path = string.format("%s/%s.json", BACKUP_DIR, date_str)
   local timestamp = os.date("%Y-%m-%d %H:%M:%S")
 
-  local line = string.format('{"topic":"%s","payload":%s,"timestamp":"%s"}\n', topic, payload, timestamp)
+  -- Ensure payload doesn't contain newlines (flatten it to keep NDJSON valid)
+  payload = payload:gsub("\n", ""):gsub("\r", "")
+  
+  local line = payload .. "\n"
   
   local file = io.open(file_path, "a")
   if not file then
@@ -100,11 +103,28 @@ end
 local function main_loop()
   print("[SYSTEM] MQTT Backup Service Active (Conditional Backup).")
   ensure_dir(BACKUP_DIR)
-  is_cloud_reachable = check_network_reachability(CLOUD_PING_HOST, 5)
-  print(string.format("[SYSTEM] Initial Network Status: %s", is_cloud_reachable and "ONLINE (Backup Disabled)" or "OFFLINE (Backup Enabled)"))
+  
+  -- Initial check
+  is_cloud_reachable = check_network_reachability(CLOUD_PING_HOST, 2) -- Fast initial check
+  print(string.format("[SYSTEM] Initial Network Status: %s", is_cloud_reachable and "ONLINE" or "OFFLINE"))
+  
+  -- Create global client instance
   client_local:connect(LOCAL_BROKER_HOST, LOCAL_BROKER_PORT, KEEPALIVE)
   
+  -- Load Uploader Module
+  package.loaded["mqtt_uploader_client"] = nil -- Force reload to avoid stale cache
+  local uploader = require("mqtt_uploader_client")
+  
+  if type(uploader) ~= "table" then
+      print("[ERROR] Failed to load uploader module. Got type: " .. type(uploader))
+      -- Fallback to dofile if require failed to return a table (sometimes happens with empty returns)
+      -- This assumes mqtt_uploader_client.lua is in the same dir
+      print("[SYSTEM] Attempting fallback with dofile...")
+      uploader = dofile("./mqtt_uploader_client.lua")
+  end
+  
   while true do
+    -- Run local loop
     local ok, err = pcall(client_local.loop, client_local, LOOP_TIMEOUT)
     if not ok then
       print(string.format("[ERROR] MQTT Loop error: %s", err))
@@ -114,16 +134,22 @@ local function main_loop()
     
       loop_counter = loop_counter + 1
       if loop_counter >= (CHECK_INTERVAL / LOOP_TIMEOUT) then
-        local status_now = check_network_reachability(CLOUD_PING_HOST, 5)
+        local status_now = check_network_reachability(CLOUD_PING_HOST, 3)
         if status_now ~= is_cloud_reachable then
             if status_now then
-                print("[NETWORK] Connection RESTORED. Disabling local backup.")
+                print("[NETWORK] Connection RESTORED. Enabling Cloud Uploads.")
             else
-                print("[NETWORK] Connection LOST. Enabling local backup.")
+                print("[NETWORK] Connection LOST. Switching to Local Backup only.")
             end
         end
         is_cloud_reachable = status_now
         cleanup_old_files()
+        
+        -- Try to upload if online (every 30s)
+        if is_cloud_reachable then
+             uploader.scan_and_upload()
+        end
+        
         loop_counter = 0
       end
     end
