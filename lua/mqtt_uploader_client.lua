@@ -70,24 +70,11 @@ function M.scan_and_upload()
     return
   end
   
-  -- Give it a moment to stabilize the network connection
-  socket.sleep(1)
-
-  local loop_ok = false
-  for _=1,5 do
-    local l_res = client:loop(0)
-    if l_res == mosq.MOSQ_ERR_SUCCESS or l_res == true then 
-      loop_ok = true
-      break 
-    else
-      print(string.format("[UPLOADER] Loop check failed. Error Code: %s", tostring(l_res)))
-    end
-    socket.sleep(0.5)
-  end
-  if not loop_ok then
-    print("[UPLOADER] MQTT connection unstable. Loop check failed consistently.")
-    return
-  end
+  -- Use background loop handling like the simple working script
+  client:loop_start()
+  
+  -- Give it a moment to stabilize the network connection and complete handshake
+  socket.sleep(2)
 
   print("[UPLOADER] Connected to cloud broker.")
 
@@ -99,23 +86,16 @@ function M.scan_and_upload()
       print(string.format("[UPLOADER] Processing file: %s", filename))
       local line_count = 0
       local error_occurred = false
-      local file_topic = MQTT_CLOUD_TOPIC .. "/" .. filename:gsub("%.json$", "")
+      -- Use the base topic so it matches the simple test script and user's subscriber
+      local file_topic = MQTT_CLOUD_TOPIC -- .. "/" .. filename:gsub("%.json$", "")
 
       for line in file_handle:lines() do
         if #line > 0 then
           client:publish(file_topic, line, QOS, false)
           
-          -- Wait a small amount to allow socket flush/processing (15ms)
-          local loop_res = client:loop(15)
-          
-          if loop_res ~= mosq.MOSQ_ERR_SUCCESS and loop_res ~= true then
-            print("[UPLOADER] Connection lost during upload.")
-            error_occurred = true
-            break
-          end
-          
+          -- Background loop handles sending, we just wait
           -- Delay 5 seconds as requested by user
-          socket.sleep(5)
+          socket.sleep(2)
 
           line_count = line_count + 1
         end
@@ -124,8 +104,6 @@ function M.scan_and_upload()
       file_handle:close()
 
       if not error_occurred then
-        -- Final flush
-        client:loop(100)
         print(string.format("[UPLOADER] Finished sending %d lines.", line_count))
         move_file(filepath, UPLOADED_DIR)
       else
@@ -138,6 +116,7 @@ function M.scan_and_upload()
   end
 
   client:disconnect()
+  pcall(client.loop_stop, client, true)
   print("[UPLOADER] Upload session finished.")
 end
 
