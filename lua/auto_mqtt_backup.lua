@@ -161,6 +161,12 @@ local function main_loop()
         -- Try to upload if online (every 30s)
         if is_cloud_reachable then
              uploader.scan_and_upload()
+             -- The upload process might take a long time (5s per line), causing local broker keepalive timeout.
+             -- We force a check/reconnect here to ensure the local listener stays alive.
+             if not client_local:loop(0) then
+                print("[LOCAL] Connection might have timed out during upload. Reconnecting...")
+                client_local:reconnect()
+             end
         end
         
         loop_counter = 0
