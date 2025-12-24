@@ -6,7 +6,7 @@ local LOCAL_BROKER_PORT = 1883
 local LOCAL_TOPIC       = "backup/CpoFlow"
 local CLIENT_ID         = "mqtt_local_backup_service"
 local CLOUD_PING_HOST   = "103.150.226.102"
-local BACKUP_DIR        = "/usr/local/home/root/test/backup"
+local BACKUP_DIR        = "/usr/local/home/root/auto_backup/data"
 local KEEP_DAYS         = 30
 local QOS           = 0
 local KEEPALIVE     = 60
@@ -116,7 +116,7 @@ local function main_loop()
   print("[SYSTEM] MQTT Backup Service Active (Conditional Backup).")
   ensure_dir(BACKUP_DIR)
   
-  is_cloud_reachable = check_network_reachability(CLOUD_PING_HOST, 2)
+  is_cloud_reachable = check_network_reachability(CLOUD_PING_HOST, 5)
   print(string.format("[SYSTEM] Initial Network Status: %s", is_cloud_reachable and "ONLINE" or "OFFLINE"))
   
   client_local:connect(LOCAL_BROKER_HOST, LOCAL_BROKER_PORT, KEEPALIVE)

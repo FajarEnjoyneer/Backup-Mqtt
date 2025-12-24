@@ -7,7 +7,7 @@ local lfs    = require("lfs")
 local MQTT_CLOUD_HOST  = "103.150.226.102"
 local MQTT_CLOUD_PORT  = 1883
 local MQTT_CLOUD_TOPIC = "upload/data/backup"
-local BACKUP_DIR       = "/usr/local/home/root/test/backup"
+local BACKUP_DIR       = "/usr/local/home/root/auto_backup/data"
 
 local QOS            = 1
 local KEEPALIVE      = 60
